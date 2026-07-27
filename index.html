@@ -52,13 +52,24 @@
   }
 
   #hint{
-    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 24px);
+    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 78px);
     left:50%; transform:translateX(-50%); z-index:5;
     background:rgba(26,18,16,.72); border-radius:16px; padding:8px 18px;
     font-size:16px; pointer-events:none; opacity:0; transition:opacity .3s;
     white-space:nowrap;
   }
   #hint.show{opacity:1;}
+
+  #filterBtn{
+    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+    left:14px; z-index:6; display:none;
+    font-family:'Jua',sans-serif; font-size:15px; color:var(--cream);
+    background:rgba(26,18,16,.72); backdrop-filter:blur(6px);
+    border:2px solid rgba(255,246,232,.5); border-radius:999px;
+    padding:9px 16px 7px; cursor:pointer;
+    box-shadow:0 3px 0 rgba(0,0,0,.35);
+  }
+  #filterBtn:active{transform:translateY(2px);}
 
   /* ---------- 오버레이 화면 ---------- */
   .screen{
@@ -123,6 +134,7 @@
 </div>
 <div id="comboTag"></div>
 <div id="hint"></div>
+<button id="filterBtn">✨ 원본</button>
 
 <!-- 시작 화면 -->
 <div class="screen" id="startScreen">
@@ -130,9 +142,10 @@
   <div class="fruitRow">🍎🍊🍇🍉🍓</div>
   <div class="howto">
     셀카 카메라 앞에서<br>
-    떨어지는 과일에 얼굴을 맞추고<br>
-    <b>입을 크게 벌리면</b> 냠냠! 🐷<br>
-    💣 폭탄은 절대 먹지 마세요!
+    <b>입을 벌려</b> 떨어지는 과일을 물고<br>
+    <b>입을 다물면</b> 냠냠! 🐷<br>
+    안 다물면 2초 뒤 도망가요!<br>
+    💣 폭탄은 절대 삼키지 마세요!
   </div>
   <button class="big" id="startBtn">카메라 켜고 시작</button>
   <div class="sub">카메라 영상은 기기 안에서만 처리돼요</div>
@@ -209,6 +222,8 @@ const sfx = {
   gold(){ blip(660, .1, 'square', .15); setTimeout(()=>blip(880,.12,'square',.15),80); setTimeout(()=>blip(1320,.16,'square',.13),160); },
   bomb(){ blip(90, .5, 'sawtooth', .25, -60); blip(50, .6, 'square', .2, -20); },
   tick(){ blip(1100, .05, 'square', .08); },
+  catch(){ blip(520, .06, 'square', .1, 120); },
+  escape(){ blip(700, .12, 'triangle', .09, -300); },
   end(){ blip(520,.15,'square',.15); setTimeout(()=>blip(390,.15,'square',.15),150); setTimeout(()=>blip(260,.3,'square',.15),300); },
 };
 
@@ -253,7 +268,7 @@ function mapPoint(lm){
 
 /* 입 상태 */
 const mouth = {
-  found:false, open:false,
+  found:false, open:false, justClosed:false,
   x:0, y:0, r:40,       // 화면상의 입 중심/반지름
   ratio:0,              // 벌림 비율
   lastSeen:0
@@ -283,6 +298,7 @@ function trackMouth(now){
   if(mouth.ratio > OPEN_T)  mouth.open = true;
   if(mouth.ratio < CLOSE_T) mouth.open = false;
   if(mouth.open && !wasOpen && game.playing) blip(200,.05,'triangle',.06);
+  if(!mouth.open && wasOpen) mouth.justClosed = true;
 
   const cx = (up.x+lo.x)/2, cy = (up.y+lo.y)/2;
   const p = mapPoint({x:cx, y:cy});
@@ -328,6 +344,7 @@ function spawnFruit(){
     r: 26,
     rot: Math.random()*Math.PI*2,
     vr: (Math.random()-0.5)*3,
+    caught:false, caughtT:0, free:0,
   });
 }
 
@@ -408,18 +425,36 @@ function loop(now){
       game.spawnTimer = Math.max(0.45, 1.1 - game.elapsed*0.011);
     }
 
-    // 과일 업데이트 + 충돌
+    // 과일 업데이트: 물기 → 다물면 냠 / 2초 지나면 탈출
     for(let i=game.fruits.length-1; i>=0; i--){
       const f = game.fruits[i];
+
+      if(f.caught){
+        // 입 안에 물려 있는 상태 — 입을 따라다님
+        f.caughtT += dt;
+        const k = Math.min(1, dt*14);
+        f.x += (mouth.x - f.x)*k;
+        f.y += (mouth.y - f.y)*k;
+        f.rot += f.vr*dt*3;
+        if(!mouth.found || f.caughtT > 2){
+          // 너무 오래 물고 있으면 탈출!
+          f.caught = false; f.free = 0.6;
+          f.vy = 160; f.vx = (Math.random()-.5)*200;
+          sfx.escape();
+          popText(f.x, f.y - 40, '도망!', '#5cc8ff');
+        }
+        continue;
+      }
+
       f.y += f.vy*dt; f.x += f.vx*dt; f.rot += f.vr*dt;
       if(f.x < 20 || f.x > W-20) f.vx *= -1;
+      if(f.free > 0) f.free -= dt;
 
-      if(mouth.found && mouth.open){
+      if(f.free <= 0 && mouth.found && mouth.open){
         const d = Math.hypot(f.x-mouth.x, f.y-mouth.y);
         if(d < mouth.r*0.8 + f.r){
-          eatFruit(f);
-          game.fruits.splice(i,1);
-          continue;
+          f.caught = true; f.caughtT = 0;
+          sfx.catch();
         }
       }
       if(f.y > H + 60){
@@ -427,6 +462,17 @@ function loop(now){
         game.fruits.splice(i,1);
       }
     }
+
+    // 입을 다무는 순간 — 물고 있던 것들 냠!
+    if(mouth.justClosed){
+      for(let i=game.fruits.length-1; i>=0; i--){
+        if(game.fruits[i].caught){
+          eatFruit(game.fruits[i]);
+          game.fruits.splice(i,1);
+        }
+      }
+    }
+    mouth.justClosed = false;
   }
 
   // 과일 그리기
@@ -434,6 +480,10 @@ function loop(now){
   for(const f of game.fruits){
     ctx.save();
     ctx.translate(f.x, f.y); ctx.rotate(f.rot);
+    if(f.caught){
+      const s = 0.85 + Math.sin(performance.now()/70)*0.1;
+      ctx.scale(s, s);
+    }
     ctx.font = (f.r*2) + 'px serif';
     if(f.gold){ ctx.shadowColor = '#ffd24d'; ctx.shadowBlur = 18; }
     if(f.bomb){ ctx.shadowColor = '#ff5c8a'; ctx.shadowBlur = 10; }
@@ -490,7 +540,9 @@ function loop(now){
   // 힌트
   if(game.playing){
     const hint = $('hint');
+    const anyCaught = game.fruits.some(f => f.caught);
     if(!mouth.found){ hint.textContent = '얼굴이 안 보여요! 카메라를 봐주세요 👀'; hint.classList.add('show'); }
+    else if(anyCaught){ hint.textContent = '지금 입 다물어요! 냠! 😮➡️😐'; hint.classList.add('show'); }
     else hint.classList.remove('show');
   }
 }
@@ -509,6 +561,7 @@ function startGame(){
   $('timeVal').textContent = '60';
   $('timerPill').classList.remove('hurry');
   $('hud').style.display = 'flex';
+  $('filterBtn').style.display = 'block';
   $('endScreen').classList.add('hidden');
 }
 
@@ -552,6 +605,26 @@ $('startBtn').addEventListener('click', async ()=>{
 });
 
 $('retryBtn').addEventListener('click', ()=> startGame());
+
+/* =========================================================
+   뷰티 필터 (탭할 때마다 다음 필터로)
+========================================================= */
+const FILTERS = [
+  { name:'원본',   css:'saturate(1.05) contrast(1.02)' },
+  { name:'화사',   css:'brightness(1.14) saturate(1.18) contrast(1.02)' },
+  { name:'뽀샤시', css:'brightness(1.16) saturate(1.08) blur(1.4px) contrast(.97)' },
+  { name:'웜톤',   css:'brightness(1.08) sepia(.22) saturate(1.3)' },
+  { name:'쿨톤',   css:'brightness(1.08) saturate(1.12) hue-rotate(-9deg) contrast(1.05)' },
+  { name:'필름',   css:'brightness(1.05) contrast(1.15) saturate(.72) sepia(.12)' },
+];
+let filterIdx = 0;
+$('filterBtn').addEventListener('click', ()=>{
+  filterIdx = (filterIdx + 1) % FILTERS.length;
+  const f = FILTERS[filterIdx];
+  video.style.filter = f.css;
+  $('filterBtn').textContent = '✨ ' + f.name;
+  blip(600 + filterIdx*80, .06, 'square', .08);
+});
 </script>
 </body>
 </html>
