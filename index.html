@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>입벌려 냠냠! — 과일 캐치</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#2b1d16;
+    --cream:#fff6e8;
+    --peach:#ff8a5c;
+    --melon:#7ed957;
+    --berry:#ff5c8a;
+    --sky:#5cc8ff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#1a1210;font-family:'Jua',system-ui,sans-serif;color:var(--cream);
+    touch-action:none; user-select:none; -webkit-user-select:none;}
+
+  #video{
+    position:fixed; inset:0; width:100%; height:100%;
+    object-fit:cover; transform:scaleX(-1);
+    filter:saturate(1.05) contrast(1.02);
+  }
+  #game{
+    position:fixed; inset:0; width:100%; height:100%; z-index:2;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    display:none; justify-content:space-between; align-items:flex-start;
+    padding:calc(env(safe-area-inset-top, 0px) + 12px) 14px 0;
+    pointer-events:none;
+  }
+  .pill{
+    background:rgba(26,18,16,.72); backdrop-filter:blur(6px);
+    border:2.5px solid var(--cream);
+    border-radius:999px; padding:6px 16px 4px;
+    font-size:22px; line-height:1.2;
+    box-shadow:0 3px 0 rgba(0,0,0,.35);
+  }
+  .pill small{font-size:13px; opacity:.75; display:block; margin-bottom:-4px;}
+  #timerPill.hurry{border-color:var(--berry); color:var(--berry); animation:pulse .5s infinite alternate;}
+  @keyframes pulse{from{transform:scale(1)}to{transform:scale(1.08)}}
+  #comboTag{
+    position:fixed; top:calc(env(safe-area-inset-top,0px) + 78px); left:50%;
+    transform:translateX(-50%); z-index:5; pointer-events:none;
+    font-size:26px; color:#ffd24d; text-shadow:0 2px 0 rgba(0,0,0,.5);
+    opacity:0; transition:opacity .2s;
+  }
+
+  #hint{
+    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 24px);
+    left:50%; transform:translateX(-50%); z-index:5;
+    background:rgba(26,18,16,.72); border-radius:16px; padding:8px 18px;
+    font-size:16px; pointer-events:none; opacity:0; transition:opacity .3s;
+    white-space:nowrap;
+  }
+  #hint.show{opacity:1;}
+
+  /* ---------- 오버레이 화면 ---------- */
+  .screen{
+    position:fixed; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(120% 90% at 50% 0%, #3a2418 0%, #1a1210 70%);
+  }
+  .screen.overlay{background:rgba(20,12,10,.82); backdrop-filter:blur(8px);}
+  .hidden{display:none !important;}
+
+  h1.logo{
+    font-size:min(13vw,56px); line-height:1.05; letter-spacing:-1px;
+    color:var(--cream); text-shadow:0 4px 0 rgba(0,0,0,.4);
+    margin-bottom:6px;
+  }
+  h1.logo .o{color:var(--peach);} h1.logo .g{color:var(--melon);} h1.logo .p{color:var(--berry);}
+  .fruitRow{font-size:34px; letter-spacing:6px; margin:10px 0 18px; animation:bob 2.2s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+
+  .howto{
+    background:rgba(255,246,232,.08); border:2px dashed rgba(255,246,232,.35);
+    border-radius:18px; padding:14px 20px; margin-bottom:26px;
+    font-size:17px; line-height:1.7; max-width:320px;
+  }
+  .howto b{color:#ffd24d;}
+
+  button.big{
+    font-family:'Jua',sans-serif; font-size:24px; color:var(--ink);
+    background:var(--peach); border:none; border-radius:999px;
+    padding:14px 46px 12px; cursor:pointer;
+    box-shadow:0 5px 0 #c85a34, 0 8px 14px rgba(0,0,0,.4);
+    transition:transform .08s;
+  }
+  button.big:active{transform:translateY(4px); box-shadow:0 1px 0 #c85a34;}
+  .sub{margin-top:14px; font-size:14px; opacity:.55;}
+
+  /* 로딩 */
+  #loadingMouth{font-size:64px; animation:chomp .7s infinite;}
+  @keyframes chomp{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
+  #loadingText{margin-top:10px; font-size:18px; opacity:.8;}
+
+  /* 결과 */
+  #finalScore{font-size:min(20vw,88px); color:#ffd24d; text-shadow:0 5px 0 rgba(0,0,0,.45); line-height:1;}
+  .statRow{display:flex; gap:22px; margin:16px 0 26px; font-size:17px;}
+  .statRow div span{display:block; font-size:26px; color:var(--cream);}
+  .statRow div{opacity:.85;}
+  #rankMsg{font-size:22px; margin-top:4px; color:var(--melon);}
+
+  #errBox{color:var(--berry); font-size:16px; max-width:300px; line-height:1.6;}
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline muted></video>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="pill"><small>점수</small><span id="scoreVal">0</span></div>
+  <div class="pill" id="timerPill"><small>남은 시간</small><span id="timeVal">60</span></div>
+</div>
+<div id="comboTag"></div>
+<div id="hint"></div>
+
+<!-- 시작 화면 -->
+<div class="screen" id="startScreen">
+  <h1 class="logo">입벌려 <span class="o">냠</span><span class="g">냠</span><span class="p">!</span></h1>
+  <div class="fruitRow">🍎🍊🍇🍉🍓</div>
+  <div class="howto">
+    셀카 카메라 앞에서<br>
+    떨어지는 과일에 얼굴을 맞추고<br>
+    <b>입을 크게 벌리면</b> 냠냠! 🐷<br>
+    💣 폭탄은 절대 먹지 마세요!
+  </div>
+  <button class="big" id="startBtn">카메라 켜고 시작</button>
+  <div class="sub">카메라 영상은 기기 안에서만 처리돼요</div>
+</div>
+
+<!-- 로딩 화면 -->
+<div class="screen hidden" id="loadingScreen">
+  <div id="loadingMouth">😮</div>
+  <div id="loadingText">입 인식 모델 불러오는 중...</div>
+</div>
+
+<!-- 에러 화면 -->
+<div class="screen hidden" id="errorScreen">
+  <div style="font-size:52px; margin-bottom:14px;">🙈</div>
+  <div id="errBox"></div>
+  <button class="big" style="margin-top:24px;" onclick="location.reload()">다시 시도</button>
+</div>
+
+<!-- 결과 화면 -->
+<div class="screen overlay hidden" id="endScreen">
+  <div style="font-size:20px; opacity:.7;">최종 점수</div>
+  <div id="finalScore">0</div>
+  <div id="rankMsg"></div>
+  <div class="statRow">
+    <div>먹은 과일<span id="statFruits">0</span></div>
+    <div>최고 콤보<span id="statCombo">0</span></div>
+    <div>폭탄 💥<span id="statBombs">0</span></div>
+  </div>
+  <button class="big" id="retryBtn">한 판 더!</button>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+/* =========================================================
+   기본 참조
+========================================================= */
+const video   = document.getElementById('video');
+const canvas  = document.getElementById('game');
+const ctx     = canvas.getContext('2d');
+const $ = id => document.getElementById(id);
+
+let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
+function resize(){
+  W = innerWidth; H = innerHeight;
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize);
+resize();
+
+/* =========================================================
+   사운드 (WebAudio — 외부 파일 없음)
+========================================================= */
+let AC = null;
+function audio(){ if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)(); return AC; }
+function blip(freq, dur, type='square', vol=0.15, slide=0){
+  try{
+    const ac = audio(), t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,freq+slide), t+dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+    o.connect(g).connect(ac.destination);
+    o.start(t); o.stop(t+dur);
+  }catch(e){}
+}
+const sfx = {
+  chomp(){ blip(300, .12, 'square', .18, -180); blip(150, .1, 'triangle', .12, -80); },
+  gold(){ blip(660, .1, 'square', .15); setTimeout(()=>blip(880,.12,'square',.15),80); setTimeout(()=>blip(1320,.16,'square',.13),160); },
+  bomb(){ blip(90, .5, 'sawtooth', .25, -60); blip(50, .6, 'square', .2, -20); },
+  tick(){ blip(1100, .05, 'square', .08); },
+  end(){ blip(520,.15,'square',.15); setTimeout(()=>blip(390,.15,'square',.15),150); setTimeout(()=>blip(260,.3,'square',.15),300); },
+};
+
+/* =========================================================
+   MediaPipe 입 인식
+========================================================= */
+let landmarker = null;
+
+async function initCamera(){
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video:{ facingMode:'user', width:{ideal:640}, height:{ideal:480} },
+    audio:false
+  });
+  video.srcObject = stream;
+  if(video.readyState < 1){
+    await new Promise(r => video.onloadedmetadata = r);
+  }
+  await video.play();
+}
+
+async function initModel(){
+  const files = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  landmarker = await FaceLandmarker.createFromOptions(files, {
+    baseOptions:{
+      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate:"GPU"
+    },
+    runningMode:"VIDEO",
+    numFaces:1
+  });
+}
+
+/* 랜드마크(정규화, 비디오 좌표) → 화면 좌표 (object-fit:cover + 미러 반영) */
+function mapPoint(lm){
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const s  = Math.max(W/vw, H/vh);
+  const dx = (W - vw*s)/2, dy = (H - vh*s)/2;
+  return { x: W - (lm.x*vw*s + dx), y: lm.y*vh*s + dy };
+}
+
+/* 입 상태 */
+const mouth = {
+  found:false, open:false,
+  x:0, y:0, r:40,       // 화면상의 입 중심/반지름
+  ratio:0,              // 벌림 비율
+  lastSeen:0
+};
+const OPEN_T = 0.34, CLOSE_T = 0.20; // 히스테리시스
+
+function trackMouth(now){
+  if(!landmarker || video.readyState < 2) return;
+  const res = landmarker.detectForVideo(video, now);
+  const face = res.faceLandmarks && res.faceLandmarks[0];
+  if(!face){ 
+    if(now - mouth.lastSeen > 400) mouth.found = false;
+    return;
+  }
+  mouth.found = true; mouth.lastSeen = now;
+
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const up = face[13], lo = face[14];        // 윗입술/아랫입술 안쪽
+  const lC = face[61], rC = face[291];       // 입꼬리 좌/우
+
+  // 실제 비율로 거리 계산 (정규화 좌표 × 비디오 크기)
+  const openDist  = Math.hypot((up.x-lo.x)*vw, (up.y-lo.y)*vh);
+  const widthDist = Math.hypot((lC.x-rC.x)*vw, (lC.y-rC.y)*vh) || 1;
+  mouth.ratio = openDist / widthDist;
+
+  const wasOpen = mouth.open;
+  if(mouth.ratio > OPEN_T)  mouth.open = true;
+  if(mouth.ratio < CLOSE_T) mouth.open = false;
+  if(mouth.open && !wasOpen && game.playing) blip(200,.05,'triangle',.06);
+
+  const cx = (up.x+lo.x)/2, cy = (up.y+lo.y)/2;
+  const p = mapPoint({x:cx, y:cy});
+  mouth.x = p.x; mouth.y = p.y;
+
+  const a = mapPoint(lC), b = mapPoint(rC);
+  mouth.r = Math.max(30, Math.hypot(a.x-b.x, a.y-b.y) * 0.62);
+}
+
+/* =========================================================
+   게임 상태
+========================================================= */
+const FRUITS = [
+  {e:'🍎', pts:10}, {e:'🍊', pts:10}, {e:'🍇', pts:15},
+  {e:'🍉', pts:10}, {e:'🍓', pts:15}, {e:'🍌', pts:10}, {e:'🍑', pts:15},
+];
+const GOLD = {e:'🌟', pts:50};
+const BOMB = {e:'💣', pts:-30};
+
+const game = {
+  playing:false, score:0, time:60,
+  combo:0, maxCombo:0, eaten:0, bombs:0,
+  fruits:[], parts:[], pops:[],
+  spawnTimer:0, elapsed:0, shake:0,
+  lastTickSec:99,
+};
+
+function spawnFruit(){
+  const roll = Math.random();
+  let kind;
+  if(roll < 0.10)      kind = BOMB;
+  else if(roll < 0.16) kind = GOLD;
+  else                 kind = FRUITS[(Math.random()*FRUITS.length)|0];
+
+  const speedUp = 1 + game.elapsed/60 * 0.9;    // 시간이 갈수록 빨라짐
+  game.fruits.push({
+    e:kind.e, pts:kind.pts,
+    bomb: kind === BOMB, gold: kind === GOLD,
+    x: 40 + Math.random()*(W-80),
+    y: -50,
+    vy: (140 + Math.random()*120) * speedUp,
+    vx: (Math.random()-0.5)*40,
+    r: 26,
+    rot: Math.random()*Math.PI*2,
+    vr: (Math.random()-0.5)*3,
+  });
+}
+
+function burst(x, y, color, n=14){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, sp = 80+Math.random()*220;
+    game.parts.push({x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-60, life:.6+Math.random()*.3, t:0, color, r:3+Math.random()*4});
+  }
+}
+function popText(x, y, txt, color){
+  game.pops.push({x, y, txt, color, t:0});
+}
+
+function eatFruit(f){
+  if(f.bomb){
+    game.score = Math.max(0, game.score + f.pts);
+    game.combo = 0; game.bombs++;
+    game.shake = 14;
+    sfx.bomb();
+    burst(f.x, f.y, '#ff5c8a', 22);
+    popText(mouth.x, mouth.y - 60, '앗 폭탄! ' + f.pts, '#ff5c8a');
+  } else {
+    game.combo++;
+    game.maxCombo = Math.max(game.maxCombo, game.combo);
+    const bonus = Math.min(game.combo-1, 10) * 2;
+    const got = f.pts + bonus;
+    game.score += got; game.eaten++;
+    f.gold ? sfx.gold() : sfx.chomp();
+    burst(f.x, f.y, f.gold ? '#ffd24d' : '#7ed957', f.gold ? 22 : 12);
+    popText(mouth.x, mouth.y - 60, '+' + got, f.gold ? '#ffd24d' : '#fff6e8');
+    if(game.combo >= 3){
+      const tag = $('comboTag');
+      tag.textContent = game.combo + ' 콤보! 🔥';
+      tag.style.opacity = 1;
+      clearTimeout(tag._t);
+      tag._t = setTimeout(()=> tag.style.opacity = 0, 900);
+    }
+  }
+  $('scoreVal').textContent = game.score;
+}
+
+/* =========================================================
+   메인 루프
+========================================================= */
+let lastT = 0;
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastT)/1000, 0.05);
+  lastT = now;
+
+  trackMouth(now);
+  ctx.clearRect(0, 0, W, H);
+
+  // 화면 흔들림
+  ctx.save();
+  if(game.shake > 0){
+    game.shake -= dt*40;
+    ctx.translate((Math.random()-.5)*game.shake, (Math.random()-.5)*game.shake);
+  }
+
+  if(game.playing){
+    game.elapsed += dt;
+    game.time -= dt;
+
+    // 타이머
+    const sec = Math.max(0, Math.ceil(game.time));
+    $('timeVal').textContent = sec;
+    if(sec <= 10){
+      $('timerPill').classList.add('hurry');
+      if(sec !== game.lastTickSec){ sfx.tick(); game.lastTickSec = sec; }
+    }
+    if(game.time <= 0){ endGame(); }
+
+    // 스폰 (점점 빨라짐: 1.1초 → 0.45초)
+    game.spawnTimer -= dt;
+    if(game.spawnTimer <= 0){
+      spawnFruit();
+      game.spawnTimer = Math.max(0.45, 1.1 - game.elapsed*0.011);
+    }
+
+    // 과일 업데이트 + 충돌
+    for(let i=game.fruits.length-1; i>=0; i--){
+      const f = game.fruits[i];
+      f.y += f.vy*dt; f.x += f.vx*dt; f.rot += f.vr*dt;
+      if(f.x < 20 || f.x > W-20) f.vx *= -1;
+
+      if(mouth.found && mouth.open){
+        const d = Math.hypot(f.x-mouth.x, f.y-mouth.y);
+        if(d < mouth.r*0.8 + f.r){
+          eatFruit(f);
+          game.fruits.splice(i,1);
+          continue;
+        }
+      }
+      if(f.y > H + 60){
+        if(!f.bomb) game.combo = 0;   // 놓치면 콤보 끊김
+        game.fruits.splice(i,1);
+      }
+    }
+  }
+
+  // 과일 그리기
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for(const f of game.fruits){
+    ctx.save();
+    ctx.translate(f.x, f.y); ctx.rotate(f.rot);
+    ctx.font = (f.r*2) + 'px serif';
+    if(f.gold){ ctx.shadowColor = '#ffd24d'; ctx.shadowBlur = 18; }
+    if(f.bomb){ ctx.shadowColor = '#ff5c8a'; ctx.shadowBlur = 10; }
+    ctx.fillText(f.e, 0, 2);
+    ctx.restore();
+  }
+
+  // 파티클
+  for(let i=game.parts.length-1; i>=0; i--){
+    const p = game.parts[i];
+    p.t += dt;
+    if(p.t > p.life){ game.parts.splice(i,1); continue; }
+    p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 500*dt;
+    ctx.globalAlpha = 1 - p.t/p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 점수 팝업
+  ctx.font = '26px Jua, sans-serif';
+  for(let i=game.pops.length-1; i>=0; i--){
+    const p = game.pops[i];
+    p.t += dt;
+    if(p.t > 0.8){ game.pops.splice(i,1); continue; }
+    ctx.globalAlpha = 1 - p.t/0.8;
+    ctx.fillStyle = p.color;
+    ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 4;
+    const y = p.y - p.t*70;
+    ctx.strokeText(p.txt, p.x, y);
+    ctx.fillText(p.txt, p.x, y);
+  }
+  ctx.globalAlpha = 1;
+
+  // 입 표시
+  if(mouth.found){
+    ctx.save();
+    ctx.translate(mouth.x, mouth.y);
+    if(mouth.open){
+      ctx.strokeStyle = '#ffd24d'; ctx.lineWidth = 5;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(0, 0, mouth.r*0.8, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,210,77,.12)';
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = 'rgba(255,246,232,.55)'; ctx.lineWidth = 3;
+      ctx.setLineDash([8,8]);
+      ctx.beginPath(); ctx.arc(0, 0, mouth.r*0.8, 0, 7); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore(); // shake
+
+  // 힌트
+  if(game.playing){
+    const hint = $('hint');
+    if(!mouth.found){ hint.textContent = '얼굴이 안 보여요! 카메라를 봐주세요 👀'; hint.classList.add('show'); }
+    else hint.classList.remove('show');
+  }
+}
+requestAnimationFrame(loop);
+
+/* =========================================================
+   화면 전환
+========================================================= */
+function startGame(){
+  Object.assign(game, {
+    playing:true, score:0, time:60, combo:0, maxCombo:0,
+    eaten:0, bombs:0, fruits:[], parts:[], pops:[],
+    spawnTimer:0.5, elapsed:0, shake:0, lastTickSec:99,
+  });
+  $('scoreVal').textContent = '0';
+  $('timeVal').textContent = '60';
+  $('timerPill').classList.remove('hurry');
+  $('hud').style.display = 'flex';
+  $('endScreen').classList.add('hidden');
+}
+
+function endGame(){
+  game.playing = false;
+  sfx.end();
+  $('hint').classList.remove('show');
+  $('finalScore').textContent = game.score;
+  $('statFruits').textContent = game.eaten;
+  $('statCombo').textContent  = game.maxCombo;
+  $('statBombs').textContent  = game.bombs;
+  const s = game.score;
+  $('rankMsg').textContent =
+    s >= 800 ? '전설의 먹깨비 👑' :
+    s >= 500 ? '프로 냠냠러 🏆' :
+    s >= 300 ? '제법 먹네요 😎' :
+    s >= 100 ? '워밍업 완료 🙂' : '입이 아직 수줍네요 😶';
+  $('endScreen').classList.remove('hidden');
+}
+
+$('startBtn').addEventListener('click', async ()=>{
+  audio(); // 사용자 제스처로 오디오 잠금 해제
+  $('startScreen').classList.add('hidden');
+  $('loadingScreen').classList.remove('hidden');
+  try{
+    $('loadingText').textContent = '카메라 켜는 중...';
+    await initCamera();
+    $('loadingText').textContent = '입 인식 모델 불러오는 중...';
+    await initModel();
+    $('loadingScreen').classList.add('hidden');
+    startGame();
+  }catch(err){
+    console.error(err);
+    $('loadingScreen').classList.add('hidden');
+    $('errorScreen').classList.remove('hidden');
+    $('errBox').textContent =
+      (err && err.name === 'NotAllowedError')
+      ? '카메라 권한이 거부됐어요. 브라우저 설정에서 카메라를 허용한 뒤 다시 시도해주세요.'
+      : '시작에 실패했어요: ' + (err.message || err) + '\nHTTPS 환경(예: GitHub Pages)에서 열었는지 확인해주세요.';
+  }
+});
+
+$('retryBtn').addEventListener('click', ()=> startGame());
+</script>
+</body>
+</html>
